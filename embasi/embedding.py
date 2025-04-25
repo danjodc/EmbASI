@@ -295,7 +295,8 @@ class StandardDFT(EmbeddingBase):
         super(StandardDFT, self).__init__(atoms, embed_mask, calc_base_ll, 
                                           calc_base_hl)
         low_level_calculator_1 = deepcopy(self.calculator_ll)
-
+        
+        low_level_calculator_1.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, self.calc_names[0], low_level_calculator_1, 
                        embed_mask, ghosts=0, no_scf=False)
 
@@ -942,54 +943,15 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
         return density_matrix_subsys_a, density_matrix_subsys_b
 
+    def get_embedding_pot(self, atomsembed, n_scf, ):
+        return 
+
     def run(self):
         """ Summary
-        The primary driver routine for performing QM-in-QM with a
-        Projection-based embedding scheme. This scheme draws upon
-        the work of Manby et al. [1, 2].
-
-        The embedding scheme uses the following total energy expression...
-
-        Importing and exporting of density matrices and hamiltonians is 
-        performed with the ASI package [3].
-
-        The workflow operates as follows:
-        1) Calculate the KS-DFT energy of the combined subsystems A+B. Localised
-           density matrices, /gamma^{A} and /gamma^{B} 
-        2a) Extract the localised density matrices 
-        2b) (Optional) Select atoms in subsystem B that contribute
-            significantly to subsystem A (threshold 0.5 |e|) via 
-            Mulliken analysis: 
-                q^{A}_{/mu, /nu} = /gamma^{A}_{/mu, /nu} S_{/mu, /nu}
-            Basis functions of said atoms within calculations of the 
-            embedded subsystem will be included as ghost atoms. Other
-            basis functions will be removed (i.e., associated atomic centers
-            not included in the QM calculation, and associated rows and 
-            columns in intermediate hamiltonians and density matrices
-            deleted).
-        2) Calculate the total energy for subsystem A with the density 
-           matrix, /gamma^{A}
-        3) 
-
-        (For users of LaTeX, I am aware that a forward slash is used
-        in place of the traditional backward slash for mathematical symbols - 
-        unfortunately using backslashes in these comment blocks produces ugly
-        warnings within the comment blocks.)
-
-        
-        ...
-
-        (1) Manby, F. R.; Stella, M.; Goodpaster, J. D.; Miller, T. F. I. 
-            A Simple, Exact Density-Functional-Theory Embedding Scheme. 
-            J. Chem. Theory Comput. 2012, 8 (8), 2564–2568.
-        (2) Lee, S. J. R.; Welborn, M.; Manby, F. R.; Miller, T. F. 
-            Projection-Based Wavefunction-in-DFT Embedding. Acc. Chem. Res. 
-            2019, 52 (5), 1359–1368.
-        (3) TODO: REF
+ 
         """
         import numpy as np
 
-        root_print("CHANGED IT")
         root_print("Embedding calculation begun...")
 
         # Performs a single-point energy evaluation for a system composed of A
@@ -1000,194 +962,19 @@ class FrozenDensityEmbedding(EmbeddingBase):
         self.F2A1.run()
 
         exit()
-        subsys_AB_lowlvl_totalen = self.AB_LL.total_energy
-        end = time.time()
-        self.time_ab_lowlevel = end - start
-
-        # Read the localised density matrices output by the QM code or
-        # perform SPADE localisation on the wrapper level.
-        basis_info = self.set_basis_info(self.AB_LL)
-        self.AB_LL.basis_info = basis_info
-        if self.localisation == "SPADE":
-            densmat_A_LL, densmat_B_LL = self.spade_localisation(self.AB_LL)
-        else:
-            densmat_A_LL = self.AB_LL.density_matrices_out[0]
-            densmat_B_LL = self.AB_LL.density_matrices_out[1]
-        # Initialises the density matrix for subsystem A, and calculates the
-        # hamiltonian components for subsystem A at the low-level reference.
-        if self.truncate_basis_thresh is not None:
-            basis_mask = self.select_atoms_basis_truncation(self.AB_LL,
-                                                            densmat_A_LL,
-                                                            self.truncate_basis_thresh)
-            basis_info = self.set_truncation_defaults(self.AB_LL, basis_mask)
-
-            self.AB_LL.truncate = False
-            self.A_LL.truncate = True
-            self.A_HL.truncate = True
-            self.A_HL_PP.truncate = True
-        else:
-            basis_info = self.set_basis_info(self.AB_LL)
-            self.AB_LL.truncate = False
-            self.A_LL.truncate = False
-            self.A_HL.truncate = False
-            self.A_HL_PP.truncate = False
-
-        if self.total_energy_corr == "nonscf":
-            self.AB_LL_PP.truncate = False
-            self.AB_LL_PP.basis_info = basis_info
-
-        self.AB_LL.basis_info = basis_info
-        self.A_LL.basis_info = basis_info
-        self.A_HL.basis_info = basis_info
-        self.A_HL_PP.basis_info = basis_info
-
-        # Calculates the electron count for the combined (A+B) and separated 
-        # subsystems (A and B).
-        self.AB_pop = self.calc_subsys_pop(self.AB_LL.overlap, \
-                                           (densmat_A_LL + densmat_B_LL))
-
-        self.A_pop = self.calc_subsys_pop(self.AB_LL.overlap, densmat_A_LL)
-
-        self.B_pop = self.calc_subsys_pop(self.AB_LL.overlap, densmat_B_LL)
-
-        root_print(f" Population of Subsystem AB: {self.AB_pop}")
-        root_print(f" Population of Subsystem A: {self.A_pop}")
-        root_print(f" Population of Subsystem B: {self.B_pop}")
-
-        # Calculate the energy for subsystem A with the lower level of theory
-        self.A_LL.density_matrix_in = densmat_A_LL
-        self.A_LL.input_fragment_nelectrons = self.A_pop
-        start = time.time()
-        self.A_LL.run(ev_corr_scf=True)
-        subsys_A_lowlvl_totalen = self.A_LL.ev_corr_total_energy
-        end = time.time()
-        self.time_a_lowlevel = end - start
-
-        # Initialises the density matrix for subsystem A, and calculated the 
-        # hamiltonian components for subsystem A at the low-level reference.
-        if self.projection == "level-shift":
-            self.calculate_levelshift_projector(densmat_B_LL)
-        elif self.projection == "huzinaga":
-            self.calculate_huzinaga_projector(self.AB_LL, densmat_B_LL)
-        else:
-            raise Exception("Invalid entry for projection: use 'level-shift' or 'huzinaga' ")
-
-        # Calculate density matrix for subsystem A at the higher level of 
-        # theory. Two terms are added to the hamiltonian matrix of the embedded
-        # subsystem to form the full embedded Fock-matrix, F^{A}:
-        #   F^{A} = h^{core} + g^{high-level}[A] + v_{emb}^[A, B] + /mu P^{B}
-        # 1) v_{emb}^[A, B], the embedding potential, which introduces the 
-        #    Hartree and exchange-correlation potentials of the environment
-        #    (in the case of FHI-aims, this includes the full electrostatic
-        #    potential, i.e., the Hartree and nuclear-electron potentials of 
-        #    subsystem B acting on subsystem A).
-        # 2) The level-shift operator, /mu P^{B}, which orthogonalises the basis
-        #    functions associated with the environment (subsystem B) from the 
-        #    embedded subsystem by adding a large energy penalty to hamiltonian
-        #    components associated with subsystem B.
-        #
-        # Registered callbacks in ASI add the above components to the Fock-matrix
-        # at every SCF iteration.
-        self.A_HL.density_matrix_in = densmat_A_LL
-        self.A_HL.input_fragment_nelectrons = self.A_pop
-        self.A_HL.fock_embedding_matrix = \
-                self.AB_LL.hamiltonian_electrostatic - \
-                    self.A_LL.hamiltonian_electrostatic + self.P_b
-        start = time.time()
-        self.A_HL.run()
-        end = time.time()
-        self.time_a_highlevel = end - start
-
-        # Calculate the total energy of the embedded subsystem A at the high
-        # level of theory without the associated embedding potential.        
-        self.A_HL_PP.density_matrix_in = self.A_HL.density_matrices_out[0]
-        self.A_HL_PP.input_fragment_nelectrons = self.A_pop
-        start = time.time()
-        self.A_HL_PP.run(ev_corr_scf=True)
-        subsys_A_highlvl_totalen = self.A_HL_PP.ev_corr_total_energy
-        end = time.time()
-        self.time_a_highlevel_pp = end - start
-
-        if self.total_energy_corr == "nonscf":
-            # A terrible cludge which requires improvement.
-            # Re-normalising charge for differing atomic solvers (bad cludge)
-            # root_print(f" Normalizing density matrix from high-level reference...")
-            # self.A_HL_pop = self.calc_subsys_pop(self.AB_LL.overlap, 
-            #                                 self.A_HL.density_matrices_out[0])
-            # root_print(f" Population of Subystem A^[HL]: {self.A_HL_pop}")
-            # self.charge_renorm = (self.A_pop/self.A_HL_pop)
-            # root_print(f" Population of Subystem A^[HL] (post-norm): 
-            #             {self.calc_subsys_pop(self.AB_LL.overlap, 
-            #             self.charge_renorm*self.A_HL.density_matrices_out[0])}")
-            self.charge_renorm = 1.0
-
-            # Calculate A low-level reference energy
-            self.A_LL.density_matrix_in = self.charge_renorm * \
-                                        self.A_HL.density_matrices_out[0]
-            self.A_LL.run(ev_corr_scf=True)
-            start = time.time()
-            subsys_A_lowlvl_totalen = self.A_LL.ev_corr_total_energy
-            end = time.time()
-            self.time_a_lowlevel_pp = end - start
-
-            # Calculate AB low-level reference energy
-            self.AB_LL_PP.density_matrix_in = \
-                (self.charge_renorm * self.A_HL.density_matrices_out[0]) + densmat_B_LL
-
-            start = time.time()
-            self.AB_LL_PP.run(ev_corr_scf=True)
-            subsys_AB_lowlvl_totalen = self.AB_LL_PP.ev_corr_total_energy
-            end = time.time()
-            self.time_ab_lowlevel_pp = end - start
-
-        # Calculate projected density correction to total energy
-        self.PB_corr = \
-            (np.trace(self.P_b @ self.A_HL.density_matrices_out[0]) * 27.211384500)
-
-        if "total_energy_method" in self.A_HL.initial_calc.parameters:
-            subsys_A_highlvl_totalen = subsys_A_highlvl_totalen + \
-                self.A_HL.post_scf_corr_energy - self.A_HL.dft_energy
-
-        if self.total_energy_corr == "1storder":
-            self.order_1_embedding_corr = np.trace((self.A_HL.density_matrices_out[0] \
-                                                    - densmat_A_LL) @ \
-                                        (self.AB_LL.hamiltonian_electrostatic - \
-                                         self.A_LL.hamiltonian_electrostatic)) * 27.211384500
-
-            self.DFT_AinB_total_energy = subsys_A_highlvl_totalen - \
-                                       subsys_A_lowlvl_totalen + subsys_AB_lowlvl_totalen + \
-                                       self.order_1_embedding_corr + self.PB_corr
-
-        if self.total_energy_corr == "nonscf":
-            self.DFT_AinB_total_energy = subsys_A_highlvl_totalen - \
-                subsys_A_lowlvl_totalen + subsys_AB_lowlvl_totalen + self.PB_corr
-
-        root_print( f" ----------- FINAL         OUTPUTS --------- " )
-        root_print(f" ")
-        root_print(f" Population Information:")
-        root_print(f" Population of Subsystem AB: {self.AB_pop}")
-        root_print(f" Population of Subsystem A: {self.A_pop}")
-        root_print(f" Population of Subsystem B: {self.B_pop}")
-        root_print(f" ")
-        root_print(f" Intermediate Information:")
-        root_print(f" WARNING: These are not faithful, ground-state KS total energies - ")
-        root_print(f" In the case of low-level references, they are calculated using the ")
-        root_print(f" density components of the high-level energy reference for fragment A. ")
-        root_print(f" Do not naively use these energies unless you are comfortable with ")
-        root_print(f" their true definition. ")
-        root_print(f" Total Energy (A+B Low-Level): {subsys_AB_lowlvl_totalen} eV" )
-        root_print(f" Total Energy (A Low-Level): {subsys_A_lowlvl_totalen} eV" )
-        root_print(f" Total Energy (A High-Level): {subsys_A_highlvl_totalen} eV" )
-        root_print(f" Projection operator energy correction DM^(A_HL) @ Pb: {self.PB_corr} eV" )
-        if self.total_energy_corr == "1storder":
-            root_print(f" First order energy correction (DM^(A_HL)-DM^(A_LL)) @ v_emb): {self.order_1_embedding_corr} eV" )
-        root_print(f"  " )
-        root_print(f" Final Energies Information:")
-        root_print(f" Final total energy (Uncorrected): {self.DFT_AinB_total_energy - self.PB_corr} eV" )
-        root_print(f" Final total energy (Projection Corrected): {self.DFT_AinB_total_energy} eV" )
-        root_print(f" " )
-        root_print(f" -----------======================--------- " )
-        root_print(f" " )
-
 
         
+""" Pseudo code for the run method
+
+        if n_scf == 1:
+            self.cluster.run()   # --> (no embedding)
+            self.env.run()       # --> (no embedding)
+            c2e_emb = get_embedding_pot()
+        
+        
+
+        
+        
+
+
+"""
