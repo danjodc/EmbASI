@@ -365,7 +365,7 @@ class ProjectionEmbedding(EmbeddingBase):
             raise Exception("Invalid entry for total_energy_corr: use '1storder' or 'nonscf' ")
 
         super(ProjectionEmbedding, self).__init__(atoms, embed_mask,
-                                                  calc_base_ll, calc_base_hl)
+                                                  calc_base_ll, calc_base_hl) 
 
         self.localisation = localisation
         if self.localisation == "SPADE":
@@ -793,155 +793,26 @@ class FrozenDensityEmbedding(EmbeddingBase):
         from copy import copy, deepcopy
         from mpi4py import MPI
 
-        self.total_energy_corr = total_energy_corr
-
-        if self.total_energy_corr == "1storder":
-            self.calc_names = ["F2A1","A_LL","A_HL","A_HL_PP"]
-        elif self.total_energy_corr == "nonscf": 
-            self.calc_names = ["AB_LL","A_LL","A_HL","A_HL_PP","AB_LL_PP"]
-        else:
-            raise Exception("Invalid entry for total_energy_corr: use '1storder' or 'nonscf' ")
-
+        self.calc_names = ["F2A1","F1A2"]
+        
         super(FrozenDensityEmbedding, self).__init__(atoms, embed_mask,
                                                   calc_base_ll, calc_base_hl)
 
-        self.localisation = localisation
-        if self.localisation == "SPADE":
-            self.calculator_ll.parameters['qm_embedding_mo_localise']=".false."
-            self.calculator_hl.parameters['qm_embedding_mo_localise']=".false."
-        elif self.localisation == "qmcode":
-            self.calculator_ll.parameters['qm_embedding_mo_localise']=".true."
-            self.calculator_hl.parameters['qm_embedding_mo_localise']=".true."
-        else:
-            raise Exception("Invalid entry for localisation: use 'SPADE' or 'qmcode' ")
+        low_level_calculator = deepcopy(self.calculator_ll)
+        high_level_calculator = deepcopy(self.calculator_ll)
 
-        self.projection = projection
-        if self.projection == "level-shift":
-            root_print(f"MO projection performed with: level-shift")
-        elif self.projection == "huzinaga":
-            root_print(f"MO projection performed with: huzinaga")
-        else:
-            raise Exception("Invalid entry for projection: use 'level-shift' or 'huzinaga' ")
-
-        low_level_calculator_1 = deepcopy(self.calculator_ll)
-        low_level_calculator_2 = deepcopy(self.calculator_ll)
+        low_level_calculator.parameters['qm_embedding_calc'] = 2
+        self.set_layer(atoms, "F2A1", low_level_calculator, 
+                       embed_mask, ghosts=2, no_scf=False)
         
-        high_level_calculator_1 = deepcopy(self.calculator_hl)
-        high_level_calculator_2 = deepcopy(self.calculator_hl)
-
-        if self.total_energy_corr == "nonscf":
-            low_level_calculator_3 = deepcopy(self.calculator_ll)
-
-        low_level_calculator_1.parameters['qm_embedding_calc'] = 1
-        self.set_layer(atoms, "F2A1", low_level_calculator_1, 
-                       embed_mask, ghosts=0, no_scf=False)
-        self.F2A1.input_total_charge = total_charge
-
-        low_level_calculator_2.parameters['qm_embedding_calc'] = 2
-        low_level_calculator_2.parameters['charge_mix_param'] = 0.
-        self.set_layer(atoms, "A_LL", low_level_calculator_2,
+        high_level_calculator.parameters['qm_embedding_calc'] = 2
+        self.set_layer(atoms, "F1A2", high_level_calculator,
                        embed_mask, ghosts=2, no_scf=False)
 
-        high_level_calculator_1.parameters['qm_embedding_calc'] = 3
-        self.set_layer(atoms, "A_HL", high_level_calculator_1,
-                       embed_mask, ghosts=2, no_scf=False)
 
-        high_level_calculator_2.parameters['qm_embedding_calc'] = 2
-        high_level_calculator_2.parameters['charge_mix_param'] = 0.
-        if "total_energy_method" in high_level_calculator_2.parameters:
-            high_level_calculator_2.parameters['total_energy_method'] = high_level_calculator_2.parameters["xc"]
-        self.set_layer(atoms, "A_HL_PP", high_level_calculator_2,
-                       embed_mask, ghosts=2, no_scf=False)
-
-        if self.total_energy_corr == "nonscf":
-            low_level_calculator_3.parameters['qm_embedding_calc'] = 2
-            low_level_calculator_3.parameters['charge_mix_param'] = 0.
-            self.set_layer(atoms, "AB_LL_PP", low_level_calculator_3,
-                           embed_mask, ghosts=0, no_scf=False)
-            self.AB_LL.input_total_charge = total_charge
-
-        self.mu_val = mu_val
         self.rank = MPI.COMM_WORLD.Get_rank()
         self.ntasks = MPI.COMM_WORLD.Get_size()
-        self.truncate_basis_thresh = truncate_basis_thresh
 
-    def calculate_levelshift_projector(self, densmat):
-        """Calculates level-shift projection operator
-
-        Calculate the level-shift based projection operator from 
-        Manby et al.[1]:
-                    P^{B} = /mu S^{AB} D^{B} S^{AB}
-        where S^{AB} is the overlap matrix for the supermolecular system, and
-        the density matrix for subsystem B.
-
-        [1] Manby, F. R.; Stella, M.; Goodpaster, J. D.; Miller, T. F. I.
-        A Simple, Exact Density-Functional-Theory Embedding Scheme.
-        J. Chem. Theory Comput. 2012, 8 (8), 2564–2568.
-        """
-
-        self.P_b = self.mu_val * (self.F2A1.overlap @ densmat @ self.F2A1.overlap)
-
-    def calculate_huzinaga_projector(self, atomsembed, densmat):
-
-        P_b = atomsembed.hamiltonian_total @ densmat @ atomsembed.overlap
-
-        self.P_b = -0.5*( P_b + P_b.T )
-
-    def spade_localisation(self, atomsembed):
-        """Calculate the localised density matrix with the SPADE method
-
-        As the eigenvectors (MO coefficient matrix) is not a part of the 
-        ASI specification, we solve the Roothan-Hall eigenvalue problem
-        and construct the density matrix at the wrapper level.
-
-        """
-        from embasi.roothan_hall_eigensolver import hamiltonian_eigensolv, calculate_densmat
-        import copy
-
-        root_print('Starting SPADE localisation...')
-
-        nelecs = atomsembed.free_atom_nelectrons - atomsembed.input_total_charge
-        evals, evecs, occ_mat = hamiltonian_eigensolv(atomsembed.hamiltonian_total, \
-                                                      atomsembed.overlap, \
-                                                      nelecs)
-        density_matrix_supersystem = calculate_densmat(evecs, occ_mat)
-
-        root_print(f'Density matrix total charge: {np.trace(atomsembed.overlap @ density_matrix_supersystem)}')
-
-        mask_val = []
-        for idx, basis2atom in enumerate(atomsembed.basis_info.full_basis_atoms):
-            if atomsembed.embed_mask[basis2atom]==1:
-                mask_val.append(True)
-            else:
-                mask_val.append(False)
-
-        evecs_occ = copy.deepcopy(evecs)
-        for idx in range(np.size(occ_mat)):
-            evecs_occ[:,idx] = evecs_occ[:,idx] * occ_mat[idx]/2
-
-        evecs_occ_a = copy.deepcopy(evecs_occ)
-        for idx in range(np.size(occ_mat)):
-            evecs_occ_a[:,idx] = np.where(np.array(mask_val), evecs_occ_a[:,idx] * occ_mat[idx]/2, 0)
-
-        u, svals, v = np.linalg.svd(evecs_occ_a)
-        svals_diff = np.ediff1d(svals**2.0)
-        max_sval_change_idx = np.argmax(np.abs(svals_diff))
-
-        root_print(f'Maximum SPADE state for subsystem A: {max_sval_change_idx}')
-        
-        evecs_occ = evecs_occ @ v.T
-        occ_mat_a = occ_mat
-        occ_mat_a[max_sval_change_idx+1:] = 0.
-
-        density_matrix_subsys_a = calculate_densmat(evecs_occ, occ_mat_a)
-        density_matrix_subsys_b = density_matrix_supersystem - density_matrix_subsys_a
-
-        root_print(f'SPADE localised subsystem A charge: {np.trace(atomsembed.overlap @ density_matrix_subsys_a)}')
-        root_print(f'SPADE localised subsystem B charge: {np.trace(atomsembed.overlap @ density_matrix_subsys_b)}')
-
-        root_print('Exiting SPADE localisation...')
-
-        return density_matrix_subsys_a, density_matrix_subsys_b
 
     def get_embedding_pot(self, atomsembed, n_scf, ):
         return 
@@ -960,8 +831,12 @@ class FrozenDensityEmbedding(EmbeddingBase):
         # nuclear-electron potential).
         start = time.time()
         self.F2A1.run()
+        self.F1A2.run()
 
-        exit()
+
+        end = time.time()
+
+        root_print(end-start)
 
         
 """ Pseudo code for the run method
