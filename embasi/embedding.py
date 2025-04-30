@@ -4,6 +4,11 @@ from embasi.parallel_utils import root_print
 import time
 import numpy as np
 
+from pprint import pprint
+
+# Development purpose only
+import os
+
 class EmbeddingBase(ABC):
     """Base object on which all embedding methods are based
 
@@ -798,8 +803,14 @@ class FrozenDensityEmbedding(EmbeddingBase):
         super(FrozenDensityEmbedding, self).__init__(atoms, embed_mask,
                                                   calc_base_ll, calc_base_hl)
 
+        initial_calculator = deepcopy(self.calculator_ll)
         low_level_calculator = deepcopy(self.calculator_ll)
         high_level_calculator = deepcopy(self.calculator_ll)
+
+        initial_calculator.parameters['ri_potential_restart'] = 'write'
+        initial_calculator.parameters['qm_embedding_calc'] = 2
+        self.set_layer(atoms, "MU0", initial_calculator, 
+                       embed_mask, ghosts=2, no_scf=False)
 
         low_level_calculator.parameters['qm_embedding_calc'] = 2
         self.set_layer(atoms, "F2A1", low_level_calculator, 
@@ -828,15 +839,42 @@ class FrozenDensityEmbedding(EmbeddingBase):
         # the two-electron components of the hamiltonian (combined with
         # nuclear-electron potential).
         start = time.time()
+
+        ediff = 1.0
+        etot_prev = 0.0
+        max_cycle = 5
+        n_cycle = 0
+
+        # Outer SCF loop
+        while np.abs(ediff) > 1.e-6 and n_cycle < max_cycle:
+            n_cycle += 1
+            print("SCF cycle: ", n_cycle)
+            
+            if n_cycle == 1:
+                self.MU0.run()
+
+            self.F2A1.run()
+            self.F1A2.run()
+
+            if n_cycle == max_cycle:
+                root_print("Max SCF cycles reached")
+                break
+
+            etot_current = self.F2A1.total_energy + self.F1A2.total_energy
+            print(f"etot_current {etot_current}")
+            ediff = etot_current - etot_prev
+            etot_prev = etot_current
+            print(ediff)
+            print("__________________________")
+            #print(ediff)
         
-        self.F2A1.run()
 
         # DOES NOT RUN, REQUIRES REAL ATOMS TO BE ON TOP OF THE LIST (DDC)
-        self.F1A2.run() 
+        #self.F1A2.run() 
 
         end = time.time()
 
-        root_print(end-start)
+        root_print(f"Total time (s): {end-start}")
 
         
 """ Pseudo code for the run method
