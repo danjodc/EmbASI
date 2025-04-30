@@ -807,8 +807,7 @@ class FrozenDensityEmbedding(EmbeddingBase):
         
         high_level_calculator.parameters['qm_embedding_calc'] = 2
         self.set_layer(atoms, "F1A2", high_level_calculator,
-                       embed_mask, ghosts=2, no_scf=False)
-
+                       embed_mask, ghosts=1, no_scf=False)
 
         self.rank = MPI.COMM_WORLD.Get_rank()
         self.ntasks = MPI.COMM_WORLD.Get_size()
@@ -818,8 +817,7 @@ class FrozenDensityEmbedding(EmbeddingBase):
         return 
 
     def run(self):
-        """ Summary
- 
+        """ Summary 
         """
         import numpy as np
 
@@ -830,9 +828,11 @@ class FrozenDensityEmbedding(EmbeddingBase):
         # the two-electron components of the hamiltonian (combined with
         # nuclear-electron potential).
         start = time.time()
+        
         self.F2A1.run()
-        self.F1A2.run()
 
+        # DOES NOT RUN, REQUIRES REAL ATOMS TO BE ON TOP OF THE LIST (DDC)
+        self.F1A2.run() 
 
         end = time.time()
 

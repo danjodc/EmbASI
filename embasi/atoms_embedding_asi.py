@@ -157,6 +157,19 @@ class AtomsEmbed():
                 shift += 1
                 lines.insert(idx + shift, f'qm_embedding_region {embedding}\n')
 
+        # Masking sorted 
+        mask_empty = [any(s in str(line) for s in ('empty',)) for line in lines]
+        mask_atom = [any(s in str(line) for s in ('atom',)) for line in lines]
+
+        first_empty = mask_empty.index(True) 
+        first_atom = mask_atom.index(True) 
+
+        if first_empty < first_atom:
+            head = lines[:first_empty]
+            tmp = lines[first_empty:first_atom]
+            tail = lines[first_atom:]
+            lines = head + tail + tmp
+        
         with open(geometry_path, 'w') as fil:
             lines = "".join(lines)
             fil.write(lines)
