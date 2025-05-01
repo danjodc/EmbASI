@@ -8,6 +8,7 @@ from pprint import pprint
 
 # Development purpose only
 import os
+import shutil
 
 class EmbeddingBase(ABC):
     """Base object on which all embedding methods are based
@@ -845,6 +846,11 @@ class FrozenDensityEmbedding(EmbeddingBase):
         max_cycle = 5
         n_cycle = 0
 
+        cwd = os.getcwd()
+        MU0_ri = os.path.join(cwd, "MU0/ri_restart_coeffs.out")
+        F2A1_ri = os.path.join(cwd, "F2A1/ri_restart_coeffs.out")
+        F1A2_ri = os.path.join(cwd, "F1A2/ri_restart_coeffs.out")
+        
         # Outer SCF loop
         while np.abs(ediff) > 1.e-6 and n_cycle < max_cycle:
             n_cycle += 1
@@ -852,19 +858,32 @@ class FrozenDensityEmbedding(EmbeddingBase):
             
             if n_cycle == 1:
                 self.MU0.run()
+                print(os.getcwd
+                try:
+                    os.mkdir("F2A1")
+                except FileExistsError:
+                    root_print("Directory F2A1 already exists")
+                shutil.copy(MU0_ri, F2A1_ri)
 
+            # Environment Calculation
             self.F2A1.run()
-            self.F1A2.run()
+            shutil.copy(F2A1_ri,F1A2_ri)
 
+            # Cluster Calculation
+            self.F1A2.run()
+            shutil.copy(F1A2_ri, F2A1_ri)
+            
             if n_cycle == max_cycle:
                 root_print("Max SCF cycles reached")
                 break
 
             etot_current = self.F2A1.total_energy + self.F1A2.total_energy
+            print(f"etot_F2A1 {self.F2A1.total_energy}")
+            print(f"etot_F1A2 {self.F1A2.total_energy}")
             print(f"etot_current {etot_current}")
             ediff = etot_current - etot_prev
             etot_prev = etot_current
-            print(ediff)
+            print(f"ediff {ediff}")
             print("__________________________")
             #print(ediff)
         

@@ -21,7 +21,7 @@ class AtomsEmbed():
     ----------
     atoms: ASE Atoms Object
         Atoms object set containing initial system information
-    initial_calc: ASE FileIOCalculator
+    initial_calc: ASE FileIOCalculator 
         Calculator object for a QM code supported by ASE and ASI
     embed_mask: int or list
         Assigns either the first in atoms to region 1, or an index of 
