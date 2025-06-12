@@ -785,9 +785,7 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
     References
     ----------
-    [1] Manby, F. R.; Stella, M.; Goodpaster, J. D.; Miller, T. F. I.
-    A Simple, Exact Density-Functional-Theory Embedding Scheme. J. Chem.
-    Theory Comput. 2012, 8 (8), 2564–2568.
+    [1] Weso
 
     """
 
@@ -799,21 +797,22 @@ class FrozenDensityEmbedding(EmbeddingBase):
         from copy import copy, deepcopy
         from mpi4py import MPI
 
-        self.calc_names = ["F2A1","F1A2"]
+        self.calc_names = ["MU0","F2A1","F1A2"]
         
         super(FrozenDensityEmbedding, self).__init__(atoms, embed_mask,
                                                   calc_base_ll, calc_base_hl)
 
-        initial_calculator = deepcopy(self.calculator_ll)
-        low_level_calculator = deepcopy(self.calculator_ll)
-        high_level_calculator = deepcopy(self.calculator_ll)
+        initial_calculator    = deepcopy(self.calculator_ll)
+        low_level_calculator  = deepcopy(self.calculator_ll)
+        high_level_calculator = deepcopy(self.calculator_hl)
 
         initial_calculator.parameters['ri_potential_restart'] = 'write'
-   #     initial_calculator.parameters['qm_embedding_calc'] = 3
+
+      #  initial_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "MU0", initial_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
 
-    #    low_level_calculator.parameters['qm_embedding_calc'] = 3
+     #   low_level_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "F2A1", low_level_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
         
@@ -823,7 +822,6 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
         self.rank = MPI.COMM_WORLD.Get_rank()
         self.ntasks = MPI.COMM_WORLD.Get_size()
-
 
     def get_embedding_pot(self, atomsembed, n_scf, ):
         return 
@@ -843,7 +841,8 @@ class FrozenDensityEmbedding(EmbeddingBase):
         n_cycle = 0
 
         cwd = os.getcwd()
-        MU0_ri = os.path.join(cwd, "MU0/ri_restart_coeffs.out")
+
+        MU0_ri  = os.path.join(cwd, "MU0/ri_restart_coeffs.out")
         F2A1_ri = os.path.join(cwd, "F2A1/ri_restart_coeffs.out")
         F1A2_ri = os.path.join(cwd, "F1A2/ri_restart_coeffs.out")
         
