@@ -809,15 +809,15 @@ class FrozenDensityEmbedding(EmbeddingBase):
         high_level_calculator = deepcopy(self.calculator_ll)
 
         initial_calculator.parameters['ri_potential_restart'] = 'write'
-        initial_calculator.parameters['qm_embedding_calc'] = 2
+   #     initial_calculator.parameters['qm_embedding_calc'] = 3
         self.set_layer(atoms, "MU0", initial_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
 
-        low_level_calculator.parameters['qm_embedding_calc'] = 2
+    #    low_level_calculator.parameters['qm_embedding_calc'] = 3
         self.set_layer(atoms, "F2A1", low_level_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
         
-        high_level_calculator.parameters['qm_embedding_calc'] = 2
+     #   high_level_calculator.parameters['qm_embedding_calc'] = 3
         self.set_layer(atoms, "F1A2", high_level_calculator,
                        embed_mask, ghosts=1, no_scf=False)
 
@@ -835,10 +835,6 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
         root_print("Embedding calculation begun...")
 
-        # Performs a single-point energy evaluation for a system composed of A
-        # and B. Returns localised density matrices for subsystems A and B, and
-        # the two-electron components of the hamiltonian (combined with
-        # nuclear-electron potential).
         start = time.time()
 
         ediff = 1.0
@@ -858,7 +854,6 @@ class FrozenDensityEmbedding(EmbeddingBase):
             
             if n_cycle == 1:
                 self.MU0.run()
-                print(os.getcwd
                 try:
                     os.mkdir("F2A1")
                 except FileExistsError:

@@ -150,12 +150,17 @@ class AtomsEmbed():
             lines = fil.readlines()
             mask = [any(s in str(line) for s in ('atom', 'empty')) for line in lines]
 
+        if self.embed_mask is None:
+            return
+
         shift = 0
+        root_print("REMOVED qm_embedding_region from geometry.in")
+#        root_print(self.initial_calc.parameters['qm_embedding_calc'])
         for idx, maskval in enumerate(mask):
             if maskval:
                 embedding = self.atoms.info['embedding_mask'][shift]
                 shift += 1
-                lines.insert(idx + shift, f'qm_embedding_region {embedding}\n')
+#                lines.insert(idx + shift, f'qm_embedding_region {embedding}\n')
 
         # Masking sorted 
         mask_empty = [any(s in str(line) for s in ('empty',)) for line in lines]
