@@ -2,6 +2,7 @@ from asi4py.asecalc import ASI_ASE_calculator
 from embasi.parallel_utils import root_print, mpi_bcast_matrix_storage, \
     mpi_bcast_integer
 import numpy as np
+import re
 from mpi4py import MPI
 
 class AtomsEmbed():
@@ -114,6 +115,11 @@ class AtomsEmbed():
         if self.embed_mask is not None:
             self._insert_embedding_region_aims()
 
+        if self.embed_mask is not None:
+            self._insert_custom_aims_controlin()
+
+
+
     def reorder_atoms_from_embed_mask(self):
         """ Re-orders atoms to push those in embedding region 1 to the beginning
 
@@ -176,6 +182,33 @@ class AtomsEmbed():
             lines = head + tail + tmp
         
         with open(geometry_path, 'w') as fil:
+            lines = "".join(lines)
+            fil.write(lines)
+
+    def _insert_custom_aims_controlin(self):
+        """Adds output keywords to the control.in file
+           This is an ad hoc solution to add output keyword to control.in
+        """
+
+        import os
+
+        cwd = os.getcwd()
+        control_path = os.path.join(cwd, "control.in")
+        with open(control_path, 'r') as fil:
+            lines = fil.readlines()
+            mask = [any(s in str(line) for s in ('aims_output',)) for line in lines]
+
+        if self.embed_mask is None:
+            return
+
+        shift = 0
+        for idx, maskval in enumerate(mask):
+            if maskval:
+               output_line = re.split(r'\s+', lines[idx])
+               output_line[0] = 'output'  # Remove empty strings
+               lines[idx] = '\t '.join(output_line) + '\n'
+        
+        with open(control_path, 'w') as fil:
             lines = "".join(lines)
             fil.write(lines)
 

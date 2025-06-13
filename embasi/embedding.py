@@ -808,15 +808,22 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
         initial_calculator.parameters['ri_potential_restart'] = 'write'
 
-      #  initial_calculator.parameters['qm_embedding_calc'] = 1
+        low_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
+        high_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
+        
+        initial_calculator.parameters["aims_output"] = "rho_and_derivs_on_grid"
+        low_level_calculator.parameters['aims_output'] = "rho_and_derivs_on_grid"
+        high_level_calculator.parameters['aims_output'] = "rho_and_derivs_on_grid"
+
+        initial_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "MU0", initial_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
 
-     #   low_level_calculator.parameters['qm_embedding_calc'] = 1
+        low_level_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "F2A1", low_level_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
         
-     #   high_level_calculator.parameters['qm_embedding_calc'] = 3
+        high_level_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "F1A2", high_level_calculator,
                        embed_mask, ghosts=1, no_scf=False)
 
@@ -845,6 +852,13 @@ class FrozenDensityEmbedding(EmbeddingBase):
         MU0_ri  = os.path.join(cwd, "MU0/ri_restart_coeffs.out")
         F2A1_ri = os.path.join(cwd, "F2A1/ri_restart_coeffs.out")
         F1A2_ri = os.path.join(cwd, "F1A2/ri_restart_coeffs.out")
+
+        MU0_dd  = os.path.join(cwd, "MU0/rho_and_derivs_spin_1.dat")
+        F2A1_dd = os.path.join(cwd, "F2A1/rho_and_derivs_spin_1.dat")
+        F1A2_dd = os.path.join(cwd, "F1A2/rho_and_derivs_spin_1.dat")
+
+        F2A1_df = os.path.join(cwd, "F2A1/subsystem_info.dat")
+        F1A2_df = os.path.join(cwd, "F1A2/subsystem_info.dat")
         
         # Outer SCF loop
         while np.abs(ediff) > 1.e-6 and n_cycle < max_cycle:
@@ -858,14 +872,17 @@ class FrozenDensityEmbedding(EmbeddingBase):
                 except FileExistsError:
                     root_print("Directory F2A1 already exists")
                 shutil.copy(MU0_ri, F2A1_ri)
+                shutil.copy(MU0_dd, F2A1_df)
 
             # Environment Calculation
             self.F2A1.run()
             shutil.copy(F2A1_ri,F1A2_ri)
+            shutil.copy(F2A1_df, F1A2_dd)
 
             # Cluster Calculation
             self.F1A2.run()
             shutil.copy(F1A2_ri, F2A1_ri)
+            shutil.copy(F1A2_df, F2A1_dd)
             
             if n_cycle == max_cycle:
                 root_print("Max SCF cycles reached")
