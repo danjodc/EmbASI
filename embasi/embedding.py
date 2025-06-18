@@ -806,24 +806,35 @@ class FrozenDensityEmbedding(EmbeddingBase):
         low_level_calculator  = deepcopy(self.calculator_ll)
         high_level_calculator = deepcopy(self.calculator_hl)
 
-        initial_calculator.parameters['ri_potential_restart'] = 'write'
+        self.Test_RI = True
+        self.Test_NonAdd = True
+        self.Test_Embed = False
+        self.qmlayer = 1
 
-        low_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
-        high_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
-        
+        if self.Test_RI:
+            initial_calculator.parameters['ri_potential_restart'] = 'write'
+            low_level_calculator.parameters['ri_potential_restart'] = 'read_and_write'
+            high_level_calculator.parameters['ri_potential_restart'] = 'read_and_write'
+
+        if self.Test_NonAdd:
+            low_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
+            high_level_calculator.parameters['qm_embedding_type'] = 'frozendensity'
+    
+        if self.Test_Embed:
+            initial_calculator.parameters['qm_embedding_calc'] = self.qmlayer
+            low_level_calculator.parameters['qm_embedding_calc'] = self.qmlayer
+            high_level_calculator.parameters['qm_embedding_calc'] = self.qmlayer
+
         initial_calculator.parameters["aims_output"] = "rho_and_derivs_on_grid"
         low_level_calculator.parameters['aims_output'] = "rho_and_derivs_on_grid"
         high_level_calculator.parameters['aims_output'] = "rho_and_derivs_on_grid"
-
-        initial_calculator.parameters['qm_embedding_calc'] = 1
+        
         self.set_layer(atoms, "MU0", initial_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
 
-        low_level_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "F2A1", low_level_calculator, 
                        embed_mask, ghosts=2, no_scf=False)
         
-        high_level_calculator.parameters['qm_embedding_calc'] = 1
         self.set_layer(atoms, "F1A2", high_level_calculator,
                        embed_mask, ghosts=1, no_scf=False)
 
@@ -844,7 +855,7 @@ class FrozenDensityEmbedding(EmbeddingBase):
 
         ediff = 1.0
         etot_prev = 0.0
-        max_cycle = 5
+        max_cycle = 50
         n_cycle = 0
 
         cwd = os.getcwd()
@@ -861,6 +872,7 @@ class FrozenDensityEmbedding(EmbeddingBase):
         F1A2_df = os.path.join(cwd, "F1A2/subsystem_info.dat")
         
         # Outer SCF loop
+        fdet_file = open("fdet.txt", "w")
         while np.abs(ediff) > 1.e-6 and n_cycle < max_cycle:
             n_cycle += 1
             print("SCF cycle: ", n_cycle)
@@ -871,38 +883,45 @@ class FrozenDensityEmbedding(EmbeddingBase):
                     os.mkdir("F2A1")
                 except FileExistsError:
                     root_print("Directory F2A1 already exists")
-                shutil.copy(MU0_ri, F2A1_ri)
-                shutil.copy(MU0_dd, F2A1_df)
-
-            # Environment Calculation
-            self.F2A1.run()
-            shutil.copy(F2A1_ri,F1A2_ri)
-            shutil.copy(F2A1_df, F1A2_dd)
+                try:
+                    os.mkdir("F1A2")
+                except FileExistsError:
+                    root_print("Directory F1A2 already exists")
+                if self.Test_RI: shutil.copy(MU0_ri, F1A2_ri)
+                if self.Test_NonAdd: shutil.copy(MU0_dd, F1A2_df)
 
             # Cluster Calculation
             self.F1A2.run()
-            shutil.copy(F1A2_ri, F2A1_ri)
-            shutil.copy(F1A2_df, F2A1_dd)
+            F1A2E = self.F1A2.total_energy
+
+            if self.Test_RI: shutil.copy(F1A2_ri, F2A1_ri)
+            if self.Test_NonAdd: shutil.copy(F1A2_dd, F2A1_df)
+
+            # Environment Calculation
+            self.F2A1.run()
+            if self.Test_RI: shutil.copy(F2A1_ri,F1A2_ri)
+            if self.Test_NonAdd: shutil.copy(F2A1_dd, F1A2_df)
             
             if n_cycle == max_cycle:
                 root_print("Max SCF cycles reached")
                 break
 
             etot_current = self.F2A1.total_energy + self.F1A2.total_energy
-            print(f"etot_F2A1 {self.F2A1.total_energy}")
-            print(f"etot_F1A2 {self.F1A2.total_energy}")
-            print(f"etot_current {etot_current}")
+            fdet_file.write("__________________________\n")
+            fdet_file.write(f"FDET Cycle: {n_cycle}\n")
+            fdet_file.write(f"etot_F2A1 {self.F2A1.total_energy}\n")
+            fdet_file.write(f"etot_F1A2 {self.F1A2.total_energy}\n")
+            fdet_file.write(f"etot_current {etot_current}\n")
             ediff = etot_current - etot_prev
             etot_prev = etot_current
-            print(f"ediff {ediff}")
-            print("__________________________")
+            fdet_file.write(f"ediff {ediff}\n")
+            fdet_file.write("__________________________\n")
+            fdet_file.flush()
             #print(ediff)
         
 
-        # DOES NOT RUN, REQUIRES REAL ATOMS TO BE ON TOP OF THE LIST (DDC)
-        #self.F1A2.run() 
-
         end = time.time()
+        fdet_file.close()
 
         root_print(f"Total time (s): {end-start}")
 

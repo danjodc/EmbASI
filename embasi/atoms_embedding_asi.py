@@ -112,8 +112,8 @@ class AtomsEmbed():
 
         calc.write_inputfiles(asi.atoms, properties=['energy'])
 
-        if self.embed_mask is not None:
-            self._insert_embedding_region_aims()
+        #if self.embed_mask is not None:
+        #    self._insert_embedding_region_aims()
 
         if self.embed_mask is not None:
             self._insert_custom_aims_controlin()
