@@ -807,8 +807,8 @@ class FrozenDensityEmbedding(EmbeddingBase):
         high_level_calculator = deepcopy(self.calculator_hl)
 
         self.Test_RI = True
-        self.Test_NonAdd = True
-        self.Test_Embed = False
+        self.Test_NonAdd = True  
+        self.Test_Embed = True
         self.qmlayer = 1
 
         if self.Test_RI:
